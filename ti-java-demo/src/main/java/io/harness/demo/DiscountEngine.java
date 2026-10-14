@@ -1,5 +1,8 @@
 package io.harness.demo;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 public class DiscountEngine {
 
     public double calculateDiscount(double subtotal, int totalQuantity) {
@@ -22,6 +25,8 @@ public class DiscountEngine {
     }
 
     private double round(double value) {
-        return Math.round(value * 100.0) / 100.0;
+        return BigDecimal.valueOf(value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 }
