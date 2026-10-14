@@ -34,10 +34,15 @@ ci-performance-lab/
 │   ├── orders-api.test.ts                  # Integration tests for API
 │   ├── fixed-orders.test.ts                # Deterministic versions of flaky tests
 │   ├── slow-deps.test.ts                   # Baseline vs slow dependency experiment
-│   ├── shard-heavy.test.ts                 # Heavy test file for sharding experiment
-│   ├── shard-light-a.test.ts               # Light test file A
-│   ├── shard-light-b.test.ts               # Light test file B
+│   ├── shard-heavy.test.ts                 # Heavy test file for default suite
+│   ├── shard-light-a.test.ts               # Light test file A for default suite
+│   ├── shard-light-b.test.ts               # Light test file B for default suite
 │   ├── isolated-orders.test.ts              # Isolated versions of shared-state tests
+│   ├── workload-a.shard.test.ts            # Shard workload A (~894ms, 4 tests)
+│   ├── workload-b.shard.test.ts            # Shard workload B (~686ms, 4 tests)
+│   ├── workload-c.shard.test.ts            # Shard workload C (~456ms, 3 tests)
+│   ├── workload-d.shard.test.ts            # Shard workload D (~346ms, 3 tests)
+│   ├── workload-e.shard.test.ts            # Shard workload E (~246ms, 2 tests)
 │   ├── flaky-orders.flaky.test.ts          # Intentionally flaky tests (excluded from default suite)
 │   └── shared-state-orders.shared-state.test.ts  # Shared state interference (excluded from default suite)
 ├── scripts/
@@ -52,6 +57,7 @@ ci-performance-lab/
 ├── vitest.flaky-retry.config.ts  # Flaky tests, retry: 3
 ├── vitest.fixed-only.config.ts   # Fixed tests only (4 tests)
 ├── vitest.isolated-only.config.ts # Isolated tests only (4 tests)
+├── vitest.shard.config.ts        # Shard workload tests only (16 tests)
 └── vitest.shared-state.config.ts # Config for shared state tests only
 ```
 
@@ -128,14 +134,49 @@ This demonstrates sequential shared-state pollution within a single test file, n
 
 ### 4. Unbalanced vs Balanced Test Sharding
 
-One heavy test file paired with two light files. Unbalanced sharding puts them on separate shards; balanced sharding distributes evenly.
+Five workload files (A-E) with controlled, deterministic delays totalling ~2.6s across 16 tests. Both scenarios run exactly the same tests; only file-to-shard assignment differs.
+
+**Measured per-file durations (local baseline):**
+
+| File | Tests | Test duration |
+|------|-------|--------------|
+| workload-a | 4 | ~894ms |
+| workload-b | 4 | ~686ms |
+| workload-c | 3 | ~456ms |
+| workload-d | 3 | ~346ms |
+| workload-e | 2 | ~246ms |
+
+**Unbalanced (file-count, 3 heaviest vs 2 lightest):**
+
+| Shard | Files | Tests | Duration |
+|-------|-------|-------|----------|
+| 1 | A + B + C | 11 | ~2036ms |
+| 2 | D + E | 5 | ~592ms |
+| Ratio | | | ~3.4:1 |
+
+**Balanced (duration-aware, target ~1314ms/shard):**
+
+| Shard | Files | Tests | Duration |
+|-------|-------|-------|----------|
+| 1 | A + D | 7 | ~1240ms |
+| 2 | B + C + E | 9 | ~1388ms |
+| Ratio | | | ~1.1:1 |
 
 ```bash
-npm run test:shard-unbalanced   # shard 1 takes 3-5x longer than shard 2
-npm run test:shard-balanced     # vitest --shard splits evenly
+# Local demo (runs shards sequentially, simulates parallel makespan):
+npm run test:shard-unbalanced
+npm run test:shard-balanced
+
+# Individual shard commands (for Harness CI parallel steps):
+npm run test:shard-1-unbalanced   # A+B+C → reports/shard-unbalanced-1.xml
+npm run test:shard-2-unbalanced   # D+E   → reports/shard-unbalanced-2.xml
+npm run test:shard-1-balanced     # A+D   → reports/shard-balanced-1.xml
+npm run test:shard-2-balanced     # B+C+E → reports/shard-balanced-2.xml
 ```
 
-**What it shows:** File-count-based sharding wastes CI parallelism. Duration-based sharding (like Harness Test Intelligence) keeps shards balanced.
+**Harness CI setup:** Create two pipeline executions, each with two parallel Run steps. Pipeline makespan = timestamp of last step completion minus timestamp of first step start. Harness shows this on the execution timeline.
+
+**What it shows:** File-count sharding creates a ~3.4:1 imbalance where one shard idles while the other finishes. Duration-aware assignment reduces the ratio to ~1.1:1 and cuts makespan by ~30%. Harness Test Intelligence automates this by tracking per-test durations across runs.
 
 ## Run all experiments
 

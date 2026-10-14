@@ -20,6 +20,10 @@
     "test:isolated-only": "vitest run -c vitest.isolated-only.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated-only.xml",
     "test:shard-unbalanced": "node scripts/run-shards-unbalanced.js",
     "test:shard-balanced": "node scripts/run-shards-balanced.js",
+    "test:shard-1-unbalanced": "vitest run tests/workload-a.shard.test.ts tests/workload-b.shard.test.ts tests/workload-c.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-unbalanced-1.xml",
+    "test:shard-2-unbalanced": "vitest run tests/workload-d.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-unbalanced-2.xml",
+    "test:shard-1-balanced": "vitest run tests/workload-a.shard.test.ts tests/workload-d.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-1.xml",
+    "test:shard-2-balanced": "vitest run tests/workload-b.shard.test.ts tests/workload-c.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-2.xml",
     "benchmark": "node scripts/benchmark-all.js",
     "lint": "tsc --noEmit"
   },
