@@ -17,6 +17,7 @@
     "test:fixed": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/fixed.xml",
     "test:shared-state": "vitest run -c vitest.shared-state.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shared-state.xml",
     "test:isolated": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated.xml",
+    "test:isolated-only": "vitest run -c vitest.isolated-only.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated-only.xml",
     "test:shard-unbalanced": "node scripts/run-shards-unbalanced.js",
     "test:shard-balanced": "node scripts/run-shards-balanced.js",
     "benchmark": "node scripts/benchmark-all.js",

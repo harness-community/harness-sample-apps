@@ -37,6 +37,7 @@ ci-performance-lab/
 │   ├── shard-heavy.test.ts                 # Heavy test file for sharding experiment
 │   ├── shard-light-a.test.ts               # Light test file A
 │   ├── shard-light-b.test.ts               # Light test file B
+│   ├── isolated-orders.test.ts              # Isolated versions of shared-state tests
 │   ├── flaky-orders.flaky.test.ts          # Intentionally flaky tests (excluded from default suite)
 │   └── shared-state-orders.shared-state.test.ts  # Shared state interference (excluded from default suite)
 ├── scripts/
@@ -50,6 +51,7 @@ ci-performance-lab/
 ├── vitest.flaky.config.ts        # Flaky tests, retry: 0
 ├── vitest.flaky-retry.config.ts  # Flaky tests, retry: 3
 ├── vitest.fixed-only.config.ts   # Fixed tests only (4 tests)
+├── vitest.isolated-only.config.ts # Isolated tests only (4 tests)
 └── vitest.shared-state.config.ts # Config for shared state tests only
 ```
 
@@ -99,14 +101,30 @@ The fixed versions validate the same behaviour without timing assumptions: gener
 
 ### 3. Shared State vs Isolation
 
-Tests that share an in-memory store without cleanup. Execution order determines which tests pass.
+Two scenarios that each run exactly 4 tests performing the same operations (create 3 orders, create 2 orders, check for zero orders, delete all):
+
+| Command | Tests | Store reset | Expected result |
+|---------|-------|-------------|-----------------|
+| `npm run test:shared-state` | 4 (shared) | None | 2 failed, 2 passed |
+| `npm run test:isolated-only` | 4 (isolated) | `clearOrders()` in `beforeEach` | 4 passed |
 
 ```bash
-npm run test:shared-state    # order-dependent, some will fail
-npm test                     # isolated: each test gets a clean store
+npm run test:shared-state     # sequential pollution: tests B and C see leftover data
+npm run test:isolated-only    # per-test reset: each test starts with an empty store
 ```
 
-**What it shows:** Shared mutable state between tests creates order-dependent failures. The fix is `beforeEach` cleanup (see `helpers.ts`).
+The shared-state tests call `buildApp()` directly, skipping the `clearOrders()` call. Since all 4 tests run sequentially in one Vitest worker, the module-level `Map<string, Order>` in `store.ts` accumulates data across tests:
+
+- **Test A** adds 3 orders, asserts 3. **Passes** (Map starts empty).
+- **Test B** adds 2 orders, asserts 2. **Fails** (Map has 5: 3 from A + 2 from B).
+- **Test C** asserts 0 orders. **Fails** (Map still has 5).
+- **Test D** deletes all, asserts 0. **Passes** (deletes whatever is there).
+
+The isolated version uses `createTestApp()` from `helpers.ts`, which calls `clearOrders()` before each test. Same assertions, same expected counts, but each test starts with a clean store.
+
+This demonstrates sequential shared-state pollution within a single test file, not concurrent cross-file interference.
+
+**What it shows:** A missing `beforeEach` cleanup turns a passing test suite into one with order-dependent failures. The fix is one line: reset shared state before each test.
 
 ### 4. Unbalanced vs Balanced Test Sharding
 
