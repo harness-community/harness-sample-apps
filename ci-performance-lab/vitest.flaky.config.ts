@@ -6,6 +6,7 @@ export default defineConfig({
     globals: true,
     testTimeout: 15000,
     hookTimeout: 10000,
+    retry: 0,
     outputFile: { junit: "reports/flaky.xml" },
   },
 });

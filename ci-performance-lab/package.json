@@ -12,6 +12,8 @@
     "test:baseline": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/baseline.xml",
     "test:slow-deps": "SLOW_DEPS=true vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/slow-deps.xml",
     "test:flaky": "vitest run -c vitest.flaky.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/flaky.xml",
+    "test:flaky-retry": "node scripts/run-flaky-retry.js",
+    "test:fixed-only": "vitest run -c vitest.fixed-only.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/fixed-only.xml",
     "test:fixed": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/fixed.xml",
     "test:shared-state": "vitest run -c vitest.shared-state.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shared-state.xml",
     "test:isolated": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated.xml",

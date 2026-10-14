@@ -40,13 +40,16 @@ ci-performance-lab/
 │   ├── flaky-orders.flaky.test.ts          # Intentionally flaky tests (excluded from default suite)
 │   └── shared-state-orders.shared-state.test.ts  # Shared state interference (excluded from default suite)
 ├── scripts/
-│   ├── benchmark-all.js       # Run all experiments and compare
+│   ├── benchmark-all.js          # Run all experiments and compare
+│   ├── run-flaky-retry.js        # Flaky retry wrapper with retry-count tracking
 │   ├── run-shards-unbalanced.js  # Unbalanced sharding demo
 │   └── run-shards-balanced.js    # Balanced sharding demo
 ├── docs/
 │   └── harness-ci-pipeline.yaml  # Sample Harness CI pipeline config
 ├── vitest.config.ts              # Default config (excludes flaky/shared-state)
-├── vitest.flaky.config.ts        # Config for flaky tests only
+├── vitest.flaky.config.ts        # Flaky tests, retry: 0
+├── vitest.flaky-retry.config.ts  # Flaky tests, retry: 3
+├── vitest.fixed-only.config.ts   # Fixed tests only (4 tests)
 └── vitest.shared-state.config.ts # Config for shared state tests only
 ```
 
@@ -65,14 +68,34 @@ npm run test:slow-deps    # slow: 500-1000ms delays per test
 
 ### 2. Flaky Tests vs Fixed Tests
 
-The flaky suite uses random thresholds, tight timing windows, and non-deterministic assertions. The fixed suite tests the same behavior with stable assertions.
+Three scenarios that each run exactly 4 tests verifying the same application behaviours:
+
+| Command | Tests | Retries | Description |
+|---------|-------|---------|-------------|
+| `npm run test:flaky` | 4 flaky | 0 | Tight timing assertions that fail under CI load |
+| `npm run test:flaky-retry` | 4 flaky | up to 3 | Same tests with retries enabled |
+| `npm run test:fixed-only` | 4 fixed | 0 | Deterministic versions of the same tests |
 
 ```bash
-npm run test:flaky        # non-deterministic, will fail randomly
-npm run test:fixed        # deterministic, always passes
+npm run test:flaky          # fails: tight latency budgets (3ms, 1ms, 2ms, 5ms)
+npm run test:flaky-retry    # retries up to 3x, may eventually pass, burns CI time
+npm run test:fixed-only     # always passes: generous thresholds (5s) or correctness-only assertions
 ```
 
-**What it shows:** Flaky tests cause retries, which waste CI minutes. The fix is deterministic assertions, not looser timeouts.
+The flaky tests model realistic CI failure patterns:
+- **Tight latency budget:** asserts API response in <3ms (fails on first call due to module init)
+- **Timestamp drift:** asserts <1ms between write and read (fails when event loop yields)
+- **Round-trip timing:** asserts update+read in <2ms (fails on GC pause)
+- **Concurrency load:** asserts 50 concurrent requests in <5ms (fails under resource contention)
+
+The fixed versions validate the same behaviour without timing assumptions: generous timeouts for latency tests, correctness assertions (all unique, all created) for load tests.
+
+**Retry tracking:** `test:flaky-retry` produces three report files:
+- `reports/flaky-retry.xml` - JUnit XML (final pass/fail only)
+- `reports/flaky-retry-results.json` - Vitest JSON with `retryCount` per test
+- `reports/retry-stats.json` - summary with total retries burned and per-test attempt counts
+
+**What it shows:** Flaky tests don't just fail - with retries enabled, they waste 2-4x the CI time before either passing or failing anyway. The fix is deterministic assertions that validate correctness, not timing.
 
 ### 3. Shared State vs Isolation
 
