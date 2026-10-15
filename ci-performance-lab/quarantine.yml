@@ -1,6 +1,6 @@
 quarantine_tests:
-  - classname: "tests/flaky-orders.flaky.test.ts"
-    name: "flaky order tests - realistic CI failure patterns > order response arrives within tight latency budget"
+  - classname: "tests/quarantine-orders.quarantine.test.ts"
+    name: "quarantine demo - known flaky test > order response arrives within tight latency budget"
     start_date: "2026-10-01"
     end_date: "2027-12-31"
     meta: "First API call hits module initialization overhead; 3ms budget is unrealistic under CI load"
