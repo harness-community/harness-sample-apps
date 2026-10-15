@@ -24,6 +24,8 @@
     "test:shard-2-unbalanced": "vitest run tests/workload-d.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-unbalanced-2.xml",
     "test:shard-1-balanced": "vitest run tests/workload-a.shard.test.ts tests/workload-d.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-1.xml",
     "test:shard-2-balanced": "vitest run tests/workload-b.shard.test.ts tests/workload-c.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-2.xml",
+    "test:quarantine": "vitest run -c vitest.flaky.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/quarantine.xml",
+    "test:quarantine-unexpected": "vitest run -c vitest.quarantine-demo.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/quarantine-demo.xml",
     "benchmark": "node scripts/benchmark-all.js",
     "lint": "tsc --noEmit"
   },
