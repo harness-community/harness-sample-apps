@@ -1,0 +1,7 @@
+target/
+!target/ci-activation-app-0.1.0.jar
+.git
+.gitignore
+*.md
+src/
+pom.xml
