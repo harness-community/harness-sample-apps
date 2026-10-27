@@ -10,6 +10,30 @@ A small order-processing service used to demonstrate Harness Continuous Delivery
 | `v2` | `v2` | `none` | Healthy with bulk-order discount: 10% off when pre-discount subtotal ≥ $100. Response exposes `subtotal`, `discountApplied`, `discountAmount`, `total`. |
 | `v3` | `v3` | `none` | **Deliberately regressed discount eligibility check** (see section below). Returns HTTP 201 and `/actuator/health*` stays UP so Kubernetes keeps the pod Ready and canary verification is the one that catches the bug. |
 
+## v3 deliberate regression
+
+**v3 is intentionally wrong.** The regression was requested as part of this demo so the Harness CD canary verification stage has a realistic bug to catch. It is not an accident, not a leftover, and not an AI hallucination — the behaviour below is deliberate.
+
+**Where it lives:** `OrderService.createOrder`. v3 evaluates discount eligibility against individual **unit prices** instead of the **extended line-item subtotal**. The subtotal itself is still computed correctly; only the eligibility check is wrong.
+
+**Critical verification scenario (what the canary gate will exercise):**
+
+| Field | Value |
+|---|---|
+| Input | `[{ productName: "Widget", quantity: 2, unitPrice: 60.00 }]` |
+| Expected subtotal | `$120.00` |
+| Expected discount | `$12.00` |
+| Expected total | `$108.00` |
+| v3 actual total | **`$120.00`** (no discount) |
+| v3 HTTP status | **`201 Created`** |
+| v3 liveness / readiness | **UP** |
+
+Because v3 still returns 201 and probes stay green, Kubernetes keeps the pod Ready. Only an application-level assertion on the response body catches this — exactly the signal we want canary verification to provide.
+
+**Why existing tests still pass under v3:** the v2 unit tests use single-unit line items at $99 / $100 / $250. Those unit prices match the eligibility outcome of the correct extended-subtotal check, so the regression is invisible to them. The gap is multi-quantity carts whose unit price is below $100 but whose line total crosses it. No existing test was removed or weakened to accommodate v3.
+
+**FAULT_MODE is unrelated.** v3 ships with `FAULT_MODE=none`. The FAULT_MODE mechanism is retained as a separate failure switch for other experiments and is not the mechanism behind v3's regression.
+
 ## Build and test
 
 ```bash

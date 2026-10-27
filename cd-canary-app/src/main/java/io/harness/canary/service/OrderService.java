@@ -43,7 +43,14 @@ public class OrderService {
             throw new IllegalArgumentException("Order total must be greater than zero");
         }
 
-        boolean discountEligible = subtotal.compareTo(DISCOUNT_THRESHOLD) >= 0;
+        // v3 regression (deliberately introduced for canary verification testing):
+        // eligibility compares individual unit prices to the threshold instead of
+        // the extended subtotal. Single-unit orders behave identically; multi-unit
+        // orders whose line totals cross $100 but whose unit prices do not miss the
+        // discount. See README "v3 deliberate regression" for the full scenario.
+        boolean discountEligible = request.getItems().stream()
+                .map(LineItem::getUnitPrice)
+                .anyMatch(unitPrice -> unitPrice.compareTo(DISCOUNT_THRESHOLD) >= 0);
         BigDecimal discountAmount = discountEligible
                 ? subtotal.multiply(DISCOUNT_RATE).setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO.setScale(2);
