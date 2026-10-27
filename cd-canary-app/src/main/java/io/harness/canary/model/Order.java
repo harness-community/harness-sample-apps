@@ -15,6 +15,15 @@ public class Order {
     private OrderStatus status;
     private Instant createdAt;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private BigDecimal subtotal;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean discountApplied;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private BigDecimal discountAmount;
+
     /** Stamped from APP_VERSION at response time. Observable signal of which build served the request. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String versionTag;
@@ -48,6 +57,15 @@ public class Order {
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    public BigDecimal getSubtotal() { return subtotal; }
+    public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }
+
+    public Boolean getDiscountApplied() { return discountApplied; }
+    public void setDiscountApplied(Boolean discountApplied) { this.discountApplied = discountApplied; }
+
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
 
     public String getVersionTag() { return versionTag; }
     public void setVersionTag(String versionTag) { this.versionTag = versionTag; }

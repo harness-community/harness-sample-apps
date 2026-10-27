@@ -51,6 +51,25 @@ class OrderControllerTest {
     }
 
     @Test
+    void createOrderExposesDiscountFieldsAtThreshold() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "customerEmail": "test@example.com",
+                                  "items": [
+                                    {"productName": "Widget", "quantity": 1, "unitPrice": 100.00}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.subtotal").value(100.00))
+                .andExpect(jsonPath("$.discountApplied").value(true))
+                .andExpect(jsonPath("$.discountAmount").value(10.00))
+                .andExpect(jsonPath("$.total").value(90.00));
+    }
+
+    @Test
     void createOrderRejectsMissingEmail() throws Exception {
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)

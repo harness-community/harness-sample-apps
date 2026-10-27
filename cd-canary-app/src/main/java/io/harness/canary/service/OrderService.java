@@ -10,6 +10,7 @@ import io.harness.canary.model.OrderStatus;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class OrderService {
+
+    static final BigDecimal DISCOUNT_THRESHOLD = new BigDecimal("100.00");
+    static final BigDecimal DISCOUNT_RATE = new BigDecimal("0.10");
 
     private final Map<String, Order> orders = new ConcurrentHashMap<>();
     private final AppProperties appProperties;
@@ -33,11 +37,17 @@ public class OrderService {
             throw new ServiceDegradedException("Order creation failed: upstream dependency degraded");
         }
 
-        BigDecimal total = calculateTotal(request.getItems());
+        BigDecimal subtotal = calculateTotal(request.getItems()).setScale(2, RoundingMode.HALF_UP);
 
-        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+        if (subtotal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Order total must be greater than zero");
         }
+
+        boolean discountEligible = subtotal.compareTo(DISCOUNT_THRESHOLD) >= 0;
+        BigDecimal discountAmount = discountEligible
+                ? subtotal.multiply(DISCOUNT_RATE).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2);
+        BigDecimal total = subtotal.subtract(discountAmount).setScale(2, RoundingMode.HALF_UP);
 
         Order order = new Order(
                 UUID.randomUUID().toString(),
@@ -47,6 +57,9 @@ public class OrderService {
                 OrderStatus.PENDING,
                 Instant.now()
         );
+        order.setSubtotal(subtotal);
+        order.setDiscountApplied(discountEligible);
+        order.setDiscountAmount(discountAmount);
         order.setVersionTag(appProperties.getVersion());
 
         orders.put(order.getId(), order);

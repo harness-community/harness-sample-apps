@@ -7,8 +7,8 @@ A small order-processing service used to demonstrate Harness Continuous Delivery
 | Tag | `APP_VERSION` | `FAULT_MODE` | Behaviour |
 |-----|---------------|--------------|-----------|
 | `v1` | `v1` | `none` | Healthy baseline. `/api/version` returns `v1`. Order responses include `versionTag: v1`. |
-| `v2` | `v2` | `none` | Healthy with a visible change. `/api/version` returns `v2`. Order responses include `versionTag: v2`. |
-| `v3` | `v3` | `errors` | **Running but broken.** `/api/version` returns `v3`. POST `/api/orders` returns 500. GETs and `/actuator/health*` stay UP so Kubernetes keeps the pod Ready and canary verification is the one that catches the failure. |
+| `v2` | `v2` | `none` | Healthy with bulk-order discount: 10% off when pre-discount subtotal ≥ $100. Response exposes `subtotal`, `discountApplied`, `discountAmount`, `total`. |
+| `v3` | `v3` | `none` | **Deliberately regressed discount eligibility check** (see section below). Returns HTTP 201 and `/actuator/health*` stays UP so Kubernetes keeps the pod Ready and canary verification is the one that catches the bug. |
 
 ## Build and test
 
@@ -26,7 +26,7 @@ mvn -B -DskipTests package
 
 docker build --build-arg APP_VERSION=v1 --build-arg FAULT_MODE=none   -t cd-canary-app:v1 .
 docker build --build-arg APP_VERSION=v2 --build-arg FAULT_MODE=none   -t cd-canary-app:v2 .
-docker build --build-arg APP_VERSION=v3 --build-arg FAULT_MODE=errors -t cd-canary-app:v3 .
+docker build --build-arg APP_VERSION=v3 --build-arg FAULT_MODE=none   -t cd-canary-app:v3 .
 ```
 
 Push each to your registry with the matching tag. Use immutable tags only, never `:latest`.

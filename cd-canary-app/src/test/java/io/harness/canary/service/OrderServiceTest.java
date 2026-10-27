@@ -138,6 +138,45 @@ class OrderServiceTest {
     }
 
     @Test
+    void discountNotAppliedAt99() {
+        Order order = orderService.createOrder(new CreateOrderRequest(
+                "shopper@example.com",
+                List.of(new LineItem("Widget", 1, new BigDecimal("99.00")))
+        ));
+
+        assertEquals(new BigDecimal("99.00"), order.getSubtotal());
+        assertEquals(Boolean.FALSE, order.getDiscountApplied());
+        assertEquals(new BigDecimal("0.00"), order.getDiscountAmount());
+        assertEquals(new BigDecimal("99.00"), order.getTotal());
+    }
+
+    @Test
+    void discountAppliedAtExactly100() {
+        Order order = orderService.createOrder(new CreateOrderRequest(
+                "shopper@example.com",
+                List.of(new LineItem("Widget", 1, new BigDecimal("100.00")))
+        ));
+
+        assertEquals(new BigDecimal("100.00"), order.getSubtotal());
+        assertEquals(Boolean.TRUE, order.getDiscountApplied());
+        assertEquals(new BigDecimal("10.00"), order.getDiscountAmount());
+        assertEquals(new BigDecimal("90.00"), order.getTotal());
+    }
+
+    @Test
+    void discountAppliedAt250() {
+        Order order = orderService.createOrder(new CreateOrderRequest(
+                "shopper@example.com",
+                List.of(new LineItem("Widget", 1, new BigDecimal("250.00")))
+        ));
+
+        assertEquals(new BigDecimal("250.00"), order.getSubtotal());
+        assertEquals(Boolean.TRUE, order.getDiscountApplied());
+        assertEquals(new BigDecimal("25.00"), order.getDiscountAmount());
+        assertEquals(new BigDecimal("225.00"), order.getTotal());
+    }
+
+    @Test
     void multipleOrdersGetUniqueIds() {
         CreateOrderRequest request = new CreateOrderRequest(
                 "iris@example.com",
