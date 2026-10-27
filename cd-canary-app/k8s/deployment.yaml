@@ -5,7 +5,7 @@ metadata:
   namespace: {{.Values.namespace}}
   labels:
     app: cd-canary-app
-    version: {{.Values.appVersion}}
+    version: {{.Values.imageTag}}
 spec:
   replicas: {{.Values.replicas}}
   selector:
@@ -20,18 +20,18 @@ spec:
     metadata:
       labels:
         app: cd-canary-app
-        version: {{.Values.appVersion}}
+        version: {{.Values.imageTag}}
     spec:
       containers:
         - name: cd-canary-app
-          image: {{.Values.image.repository}}:{{.Values.image.tag}}
+          image: {{.Values.image}}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
+          # APP_VERSION is baked into the image during docker build, so it
+          # is not overridden here. FAULT_MODE stays runtime-configurable.
           env:
-            - name: APP_VERSION
-              value: "{{.Values.appVersion}}"
             - name: FAULT_MODE
               value: "{{.Values.faultMode}}"
           # Liveness: is the JVM alive? Never flips under fault mode.

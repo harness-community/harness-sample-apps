@@ -4,9 +4,15 @@
 namespace: <+infra.namespace>
 
 replicas: 2
-appVersion: v1
+
+# APP_VERSION is baked into each image during docker build, so it is NOT
+# re-set from values. faultMode remains a runtime toggle for failure
+# experiments and is independent of the image tag.
 faultMode: none
 
-image:
-  repository: REPLACE_WITH_REGISTRY/cd-canary-app
-  tag: v1
+# Full image reference (host/repo:tag) resolved from the Harness Service's
+# primary artifact at deploy time. The tag is published separately so pod
+# labels can reflect which version Harness scheduled, without a second
+# source of truth.
+image: <+artifacts.primary.image>
+imageTag: <+artifacts.primary.tag>
