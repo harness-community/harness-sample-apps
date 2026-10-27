@@ -64,6 +64,19 @@ jobs:
         working-directory: cd-canary-app
         run: mvn -B -ntp package
 
+      - name: Stage minimal Docker build context
+        # Historical commits ship a .dockerignore inherited from an earlier
+        # app that excludes target/ (and whose re-include names the wrong
+        # jar). Rather than mutate those commits, assemble a dedicated,
+        # minimal context containing only the Dockerfile from the
+        # checked-out revision and the freshly built jar.
+        run: |
+          set -euo pipefail
+          mkdir -p docker-context/target
+          cp cd-canary-app/Dockerfile                        docker-context/Dockerfile
+          cp cd-canary-app/target/cd-canary-app-1.0.0.jar    docker-context/target/cd-canary-app-1.0.0.jar
+          ls -la docker-context docker-context/target
+
       - name: Upload Surefire reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,8 +93,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: cd-canary-app
-          file: cd-canary-app/Dockerfile
+          context: docker-context
+          file: docker-context/Dockerfile
           platforms: linux/amd64
           push: false
           load: true

@@ -1,5 +1,5 @@
-target/
-!target/ci-activation-app-0.1.0.jar
+target/*
+!target/cd-canary-app-1.0.0.jar
 .git
 .gitignore
 *.md
