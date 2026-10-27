@@ -1,0 +1,12 @@
+# Harness renders this file before Go templating.
+# `<+infra.namespace>` is resolved from the Harness Infrastructure Definition at deploy time,
+# so the same values file works across dev/staging/prod environments without edits.
+namespace: <+infra.namespace>
+
+replicas: 2
+appVersion: v1
+faultMode: none
+
+image:
+  repository: REPLACE_WITH_REGISTRY/cd-canary-app
+  tag: v1
