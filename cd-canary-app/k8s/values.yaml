@@ -16,3 +16,8 @@ faultMode: none
 # source of truth.
 image: <+artifacts.primary.image>
 imageTag: <+artifacts.primary.tag>
+
+# Base64-encoded .dockercfg produced by Harness from the Service's primary
+# artifact and its Docker Registry connector. Resolved at deploy time only;
+# never committed to Git. Consumed by image-pull-secret.yaml.
+dockercfg: <+artifacts.primary.imagePullSecret>

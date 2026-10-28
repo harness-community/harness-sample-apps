@@ -22,6 +22,8 @@ spec:
         app: cd-canary-app
         version: {{.Values.imageTag}}
     spec:
+      imagePullSecrets:
+        - name: cd-canary-app-dockercfg
       containers:
         - name: cd-canary-app
           image: {{.Values.image}}
