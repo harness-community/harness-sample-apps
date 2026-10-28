@@ -1,0 +1,201 @@
+# Phase A: build and validate the three cd-canary-app Docker images.
+#
+# Builds v1, v2, and v3 from their exact 40-character commit SHAs on
+# feat/cd-canary-journey, runs the Maven test suite for each, and builds a
+# linux/amd64 OCI image per version. Images stay on the runner only. A
+# separate Phase B workflow will handle registry authentication and push,
+# at which point the published registry digest becomes the identifier of
+# record. In Phase A the local image id plus the source commit SHA are
+# what we record.
+name: cd-canary-build
+
+on:
+  push:
+    branches:
+      - feat/cd-canary-journey
+    paths:
+      - 'cd-canary-app/**'
+      - '.github/workflows/cd-canary-build.yml'
+
+permissions:
+  contents: read
+
+# Serialize runs on the same ref so logs/artifacts from an in-flight build
+# are not lost if a correction push lands while it is running.
+concurrency:
+  group: cd-canary-build-${{ github.ref }}
+
+jobs:
+  build:
+    name: build ${{ matrix.version.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - tag: v1
+            sha: f726b010e13ec8cea01d3959d1f504f2c4305ae7
+          - tag: v2
+            sha: a89323788183449f62984980f045be6bc8ec90e2
+          - tag: v3
+            sha: 6bb3d21cd02898f41b9da3457cf381f78b274832
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.version.sha }}
+          fetch-depth: 1
+
+      - name: Derive short SHA
+        id: sha
+        run: |
+          FULL_SHA='${{ matrix.version.sha }}'
+          echo "short_sha=${FULL_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17 (Temurin) with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: cd-canary-app/pom.xml
+
+      - name: Maven build and test
+        working-directory: cd-canary-app
+        run: mvn -B -ntp package
+
+      - name: Stage minimal Docker build context
+        # Historical commits ship a .dockerignore inherited from an earlier
+        # app that excludes target/ (and whose re-include names the wrong
+        # jar). Rather than mutate those commits, assemble a dedicated,
+        # minimal context containing only the Dockerfile from the
+        # checked-out revision and the freshly built jar.
+        run: |
+          set -euo pipefail
+          mkdir -p docker-context/target
+          cp cd-canary-app/Dockerfile                        docker-context/Dockerfile
+          cp cd-canary-app/target/cd-canary-app-1.0.0.jar    docker-context/target/cd-canary-app-1.0.0.jar
+          ls -la docker-context docker-context/target
+
+      - name: Upload Surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          path: cd-canary-app/target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build linux/amd64 image (no push)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: docker-context
+          file: docker-context/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          build-args: |
+            APP_VERSION=${{ matrix.version.tag }}
+            FAULT_MODE=none
+          tags: |
+            cd-canary-app:${{ matrix.version.tag }}
+            cd-canary-app:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=cd-canary-app
+            org.opencontainers.image.version=${{ matrix.version.tag }}
+            org.opencontainers.image.revision=${{ matrix.version.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            io.harness.canary.app-version=${{ matrix.version.tag }}
+            io.harness.canary.fault-mode=none
+
+      - name: Inspect local image
+        run: |
+          docker image inspect \
+            "cd-canary-app:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}" \
+            --format 'id={{.Id}} size={{.Size}} created={{.Created}}'
+
+      - name: Record build outcome (Phase A, local image only)
+        if: always()
+        run: |
+          mkdir -p build-report
+          # Phase A records the local Docker image id (sha256 of the local
+          # OCI config) and the source commit SHA. This is NOT a registry
+          # digest and does not represent a published artifact. The registry
+          # digest will be recorded in Phase B after an authenticated push.
+          cat > "build-report/${{ matrix.version.tag }}.txt" <<EOF
+          version:          ${{ matrix.version.tag }}
+          commit_sha:       ${{ matrix.version.sha }}
+          commit_short:     ${{ steps.sha.outputs.short_sha }}
+          app_version:      ${{ matrix.version.tag }}
+          fault_mode:       none
+          image_tag:        cd-canary-app:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          local_image_id:   ${{ steps.build.outputs.imageid }}
+          phase:            A (local build only; no registry push)
+          workflow_run:     ${{ github.run_id }}
+          outcome:          ${{ job.status }}
+          EOF
+          cat "build-report/${{ matrix.version.tag }}.txt"
+
+      - name: Upload build report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report-${{ matrix.version.tag }}
+          path: build-report/${{ matrix.version.tag }}.txt
+          retention-days: 30
+
+  summary:
+    name: build summary
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build reports (may be partial)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-report-*
+          path: reports
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Render job summary
+        shell: bash
+        run: |
+          set -u
+          {
+            echo "## cd-canary-app Phase A build summary"
+            echo ""
+            echo "Phase A builds images on the runner only. No registry push."
+            echo ""
+
+            expected=(v1 v2 v3)
+            found_any=0
+
+            echo "| version | commit | image tag | local image id | status |"
+            echo "|---------|--------|-----------|----------------|--------|"
+            for v in "${expected[@]}"; do
+              f="reports/${v}.txt"
+              if [[ -f "$f" ]]; then
+                found_any=1
+                commit=$(grep -E '^commit_short:' "$f" | awk '{print $2}')
+                tag=$(grep -E '^image_tag:' "$f" | awk '{print $2}')
+                image_id=$(grep -E '^local_image_id:' "$f" | awk '{print $2}')
+                status=$(grep -E '^outcome:' "$f" | awk '{print $2}')
+                : "${commit:=unknown}" "${tag:=unknown}" "${image_id:=unknown}" "${status:=unknown}"
+                echo "| ${v} | ${commit} | ${tag} | ${image_id} | ${status} |"
+              else
+                # Build job failed before uploading its report (checkout, setup, etc.)
+                echo "| ${v} | — | — | — | **report missing** |"
+              fi
+            done
+
+            echo ""
+            if [[ $found_any -eq 0 ]]; then
+              echo "No build reports were produced. Inspect the build job logs for"
+              echo "early-stage failures (checkout, JDK setup, Maven, Buildx)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
