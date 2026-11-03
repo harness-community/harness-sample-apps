@@ -17,12 +17,11 @@ spec:
         app: local-cicd-demo
         version: v1
     spec:
+      imagePullSecrets:
+        - name: local-cicd-demo-dockercfg
       containers:
         - name: web
-          # Placeholder for later Harness Artifact Registry substitution, e.g.
-          # <REGISTRY_HOST>/<REPO>/local-cicd-demo:<TAG>. Harness CD will
-          # replace this via <+artifacts.primary.image> at deploy time.
-          image: REGISTRY_PLACEHOLDER/local-cicd-demo:v1
+          image: {{ .Values.image }}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

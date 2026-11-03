@@ -1,0 +1,10 @@
+# Harness renders this file BEFORE Go templating of the manifests in k8s/.
+# Harness-side expressions are resolved from the Service's primary artifact
+# at deploy time. Nothing here is committed with real values.
+
+# Full image reference (host/repo:tag) from the Service's primary artifact.
+image: <+artifacts.primary.image>
+
+# Base64 .dockercfg produced by Harness from the Docker Registry connector
+# bound to the primary artifact. Consumed by k8s/image-pull-secret.yaml.
+dockercfg: <+artifacts.primary.imagePullSecret>
