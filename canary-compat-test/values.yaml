@@ -1,0 +1,5 @@
+# Values rendered by Harness before Go-templating k8s/* manifests.
+# Fed by the primary artifact on service canary_compat_test_sd (NGINX image
+# on har_cd_registry at oci/proj-devrel-docker-canary/local-cicd-demo).
+image: <+artifacts.primary.image>
+dockercfg: <+artifacts.primary.imagePullSecret>

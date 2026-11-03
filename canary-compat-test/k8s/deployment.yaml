@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicd-canary-test
+  namespace: demo
+  labels:
+    app: cicd-canary-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cicd-canary-test
+  template:
+    metadata:
+      labels:
+        app: cicd-canary-test
+    spec:
+      imagePullSecrets:
+        - name: cicd-canary-test-dockercfg
+      containers:
+        - name: web
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
