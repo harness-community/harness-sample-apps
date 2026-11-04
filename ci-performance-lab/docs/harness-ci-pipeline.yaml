@@ -1,0 +1,114 @@
+pipeline:
+  name: ci-performance-lab
+  clone:
+    enabled: true
+  stages:
+    - id: build_and_test
+      name: build-and-test
+      runtime: cloud
+      clone:
+        enabled: true
+      cache:
+        enabled: true
+      build-intelligence:
+        enabled: true
+      steps:
+        - id: install
+          name: Install Dependencies
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm ci
+
+        - id: lint
+          name: Type Check
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm run lint
+
+        - id: test_baseline
+          name: Test - Baseline
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm run test:baseline
+            report:
+              type: junit
+              paths:
+                - ci-performance-lab/reports/baseline.xml
+
+        - id: test_slow_deps
+          name: Test - Slow Dependencies
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm run test:slow-deps
+            report:
+              type: junit
+              paths:
+                - ci-performance-lab/reports/slow-deps.xml
+
+        - id: test_fixed
+          name: Test - Fixed (Deterministic)
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm run test:fixed
+            report:
+              type: junit
+              paths:
+                - ci-performance-lab/reports/fixed.xml
+
+    - id: experiments
+      name: experiments
+      runtime: cloud
+      clone:
+        enabled: true
+      cache:
+        enabled: true
+      steps:
+        - id: test_flaky
+          name: Experiment - Flaky Tests
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm ci
+              npm run test:flaky || true
+            report:
+              type: junit
+              paths:
+                - ci-performance-lab/reports/flaky.xml
+
+        - id: test_shared_state
+          name: Experiment - Shared State
+          run:
+            container:
+              image: node:22-slim
+            shell: bash
+            script: |
+              cd ci-performance-lab
+              npm ci
+              npm run test:shared-state || true
+            report:
+              type: junit
+              paths:
+                - ci-performance-lab/reports/shared-state.xml

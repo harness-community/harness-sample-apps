@@ -1,0 +1,213 @@
+# Phase B: publish the three cd-canary-app Docker images.
+#
+# Builds v1, v2, and v3 from their exact historical commit SHAs, authenticates
+# to the Harness Artifact Registry using repository secrets, and pushes
+# immutable version-plus-short-SHA tags. No `latest` tag is produced.
+#
+# Trigger is intentionally narrow: this workflow runs only when its own file
+# is pushed to feat/cd-canary-journey. The Phase A build workflow
+# (cd-canary-build.yml) remains the authority for ongoing CI on every app
+# change; this one is for deliberate publication.
+name: cd-canary-publish
+
+on:
+  push:
+    branches:
+      - feat/cd-canary-journey
+    paths:
+      - '.github/workflows/cd-canary-publish.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-canary-publish-${{ github.ref }}
+
+env:
+  REGISTRY_HOST: unifiedpipeline.harness.io
+  IMAGE_REPO: unifiedpipeline.harness.io/oci/proj-devrel-docker-canary/cd-canary-app
+
+jobs:
+  publish:
+    name: publish ${{ matrix.version.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - tag: v1
+            sha: f726b010e13ec8cea01d3959d1f504f2c4305ae7
+          - tag: v2
+            sha: a89323788183449f62984980f045be6bc8ec90e2
+          - tag: v3
+            sha: 6bb3d21cd02898f41b9da3457cf381f78b274832
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.version.sha }}
+          fetch-depth: 1
+
+      - name: Derive short SHA
+        id: sha
+        run: |
+          FULL_SHA='${{ matrix.version.sha }}'
+          echo "short_sha=${FULL_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17 (Temurin) with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: cd-canary-app/pom.xml
+
+      - name: Maven build and test
+        working-directory: cd-canary-app
+        run: mvn -B -ntp package
+
+      - name: Upload Surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          path: cd-canary-app/target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stage minimal Docker build context
+        # Same technique as the Phase A build workflow: historical commits
+        # ship a .dockerignore that excludes target/, so we assemble a fresh
+        # context with only the checked-out Dockerfile and the Maven jar.
+        run: |
+          set -euo pipefail
+          mkdir -p docker-context/target
+          cp cd-canary-app/Dockerfile                        docker-context/Dockerfile
+          cp cd-canary-app/target/cd-canary-app-1.0.0.jar    docker-context/target/cd-canary-app-1.0.0.jar
+          ls -la docker-context docker-context/target
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Harness Artifact Registry
+        # The Service Account credentials have not previously been tested
+        # against this registry's Docker login endpoint. If this step fails,
+        # the matrix entry stops here and the push step below never runs.
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_HOST }}
+          username: ${{ secrets.HARNESS_REGISTRY_USERNAME }}
+          password: ${{ secrets.HARNESS_REGISTRY_TOKEN }}
+
+      - name: Build and push linux/amd64 image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: docker-context
+          file: docker-context/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            APP_VERSION=${{ matrix.version.tag }}
+            FAULT_MODE=none
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=cd-canary-app
+            org.opencontainers.image.version=${{ matrix.version.tag }}
+            org.opencontainers.image.revision=${{ matrix.version.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            io.harness.canary.app-version=${{ matrix.version.tag }}
+            io.harness.canary.fault-mode=none
+
+      - name: Verify pushed image reference
+        env:
+          IMAGE_REF: ${{ env.IMAGE_REPO }}:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          REGISTRY_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "Querying registry for ${IMAGE_REF}"
+          docker buildx imagetools inspect "${IMAGE_REF}" > imagetools.txt
+          sed -n '1,60p' imagetools.txt
+          if grep -q "${REGISTRY_DIGEST}" imagetools.txt; then
+            echo "Registry confirms digest ${REGISTRY_DIGEST}"
+          else
+            echo "Pushed digest not found in registry inspection"
+            exit 1
+          fi
+
+      - name: Record publish outcome
+        if: always()
+        run: |
+          mkdir -p publish-report
+          cat > "publish-report/${{ matrix.version.tag }}.txt" <<EOF
+          version:          ${{ matrix.version.tag }}
+          commit_sha:       ${{ matrix.version.sha }}
+          commit_short:     ${{ steps.sha.outputs.short_sha }}
+          app_version:      ${{ matrix.version.tag }}
+          fault_mode:       none
+          image_ref:        ${{ env.IMAGE_REPO }}:${{ matrix.version.tag }}-${{ steps.sha.outputs.short_sha }}
+          registry_digest:  ${{ steps.build.outputs.digest }}
+          phase:            B (built and pushed to Harness Artifact Registry)
+          workflow_run:     ${{ github.run_id }}
+          outcome:          ${{ job.status }}
+          EOF
+          cat "publish-report/${{ matrix.version.tag }}.txt"
+
+      - name: Upload publish report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-report-${{ matrix.version.tag }}
+          path: publish-report/${{ matrix.version.tag }}.txt
+          retention-days: 90
+
+  summary:
+    name: publish summary
+    needs: publish
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download publish reports (may be partial)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: publish-report-*
+          path: reports
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Render job summary
+        shell: bash
+        run: |
+          set -u
+          {
+            echo "## cd-canary-app Phase B publish summary"
+            echo ""
+            echo "| version | commit | image ref | registry digest | status |"
+            echo "|---------|--------|-----------|-----------------|--------|"
+
+            expected=(v1 v2 v3)
+            found_any=0
+            for v in "${expected[@]}"; do
+              f="reports/${v}.txt"
+              if [[ -f "$f" ]]; then
+                found_any=1
+                commit=$(grep -E '^commit_short:'    "$f" | awk '{print $2}')
+                ref=$(grep -E '^image_ref:'          "$f" | awk '{print $2}')
+                digest=$(grep -E '^registry_digest:' "$f" | awk '{print $2}')
+                status=$(grep -E '^outcome:'         "$f" | awk '{print $2}')
+                : "${commit:=unknown}" "${ref:=unknown}" "${digest:=unknown}" "${status:=unknown}"
+                echo "| ${v} | ${commit} | ${ref} | ${digest} | ${status} |"
+              else
+                echo "| ${v} | — | — | — | **report missing** |"
+              fi
+            done
+
+            echo ""
+            if [[ $found_any -eq 0 ]]; then
+              echo "No publish reports were produced. Inspect the publish job"
+              echo "logs; most common failure modes are registry login (bad"
+              echo "credentials, blocked network path) and buildx push (RBAC"
+              echo "on the Harness Artifact Registry service account)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

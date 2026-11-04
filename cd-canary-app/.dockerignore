@@ -1,0 +1,7 @@
+target/*
+!target/cd-canary-app-1.0.0.jar
+.git
+.gitignore
+*.md
+src/
+pom.xml

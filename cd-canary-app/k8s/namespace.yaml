@@ -1,0 +1,14 @@
+# Optional provisioning asset. NOT part of the Harness Canary application's managed
+# manifest set. The namespace must already exist in the target cluster before Harness
+# deploys the application; create it out-of-band (kubectl apply, cluster bootstrap, or
+# a one-time pipeline step) rather than letting Harness manage it alongside the
+# Deployment and Service.
+#
+# The name here MUST match the Harness Infrastructure Definition's namespace field
+# so `<+infra.namespace>` in values.yaml resolves to the same value.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cd-canary
+  labels:
+    app: cd-canary-app
