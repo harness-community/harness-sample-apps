@@ -1,0 +1,43 @@
+{
+  "name": "ci-performance-lab",
+  "version": "1.0.0",
+  "description": "Order-processing API with reproducible CI performance experiments for Harness CI",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml",
+    "test:watch": "vitest",
+    "test:baseline": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/baseline.xml",
+    "test:slow-deps": "SLOW_DEPS=true vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/slow-deps.xml",
+    "test:flaky": "vitest run -c vitest.flaky.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/flaky.xml",
+    "test:flaky-retry": "node scripts/run-flaky-retry.js",
+    "test:fixed-only": "vitest run -c vitest.fixed-only.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/fixed-only.xml",
+    "test:fixed": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/fixed.xml",
+    "test:shared-state": "vitest run -c vitest.shared-state.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shared-state.xml",
+    "test:isolated": "vitest run -c vitest.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated.xml",
+    "test:isolated-only": "vitest run -c vitest.isolated-only.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/isolated-only.xml",
+    "test:shard-unbalanced": "node scripts/run-shards-unbalanced.js",
+    "test:shard-balanced": "node scripts/run-shards-balanced.js",
+    "test:shard-1-unbalanced": "vitest run tests/workload-a.shard.test.ts tests/workload-b.shard.test.ts tests/workload-c.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-unbalanced-1.xml",
+    "test:shard-2-unbalanced": "vitest run tests/workload-d.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-unbalanced-2.xml",
+    "test:shard-1-balanced": "vitest run tests/workload-a.shard.test.ts tests/workload-d.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-1.xml",
+    "test:shard-2-balanced": "vitest run tests/workload-b.shard.test.ts tests/workload-c.shard.test.ts tests/workload-e.shard.test.ts -c vitest.shard.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/shard-balanced-2.xml",
+    "test:quarantine": "vitest run -c vitest.quarantine.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/quarantine.xml",
+    "test:quarantine-unexpected": "vitest run -c vitest.quarantine-demo.config.ts --reporter=default --reporter=junit --outputFile.junit=reports/quarantine-demo.xml",
+    "benchmark": "node scripts/benchmark-all.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/sensible": "^6.0.1",
+    "fastify": "^5.1.0",
+    "nanoid": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
