@@ -1,0 +1,23 @@
+# Harness renders this file before Go templating.
+# `<+infra.namespace>` is resolved from the Harness Infrastructure Definition at deploy time,
+# so the same values file works across dev/staging/prod environments without edits.
+namespace: <+infra.namespace>
+
+replicas: 2
+
+# APP_VERSION is baked into each image during docker build, so it is NOT
+# re-set from values. faultMode remains a runtime toggle for failure
+# experiments and is independent of the image tag.
+faultMode: none
+
+# Full image reference (host/repo:tag) resolved from the Harness Service's
+# primary artifact at deploy time. The tag is published separately so pod
+# labels can reflect which version Harness scheduled, without a second
+# source of truth.
+image: <+artifacts.primary.image>
+imageTag: <+artifacts.primary.tag>
+
+# Base64-encoded .dockercfg produced by Harness from the Service's primary
+# artifact and its Docker Registry connector. Resolved at deploy time only;
+# never committed to Git. Consumed by image-pull-secret.yaml.
+dockercfg: <+artifacts.primary.imagePullSecret>

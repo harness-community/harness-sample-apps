@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cd-canary-app
+  namespace: {{.Values.namespace}}
+  labels:
+    app: cd-canary-app
+spec:
+  type: ClusterIP
+  selector:
+    app: cd-canary-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
