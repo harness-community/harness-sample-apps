@@ -1,0 +1,89 @@
+pipeline:
+  id: Ledger_CI
+  name: Ledger Service CI
+  stages:
+    - parallel:
+        stages:
+          - id: unit_tests
+            name: Unit Tests
+            clone:
+              enabled: false
+            steps:
+              - id: run_unit_tests
+                name: Run unit tests
+                timeout: 10m
+                run:
+                  shell: sh
+                  container:
+                    connector: devrel_harness_docker
+                    image: sonichigo/ledger-ci-lab:1.0
+                  script: |-
+                    cd /app
+                    FEE_MODE=legacy pytest -v tests/test_accounts.py tests/test_fees.py
+
+          - id: load_tests
+            name: Load Tests
+            clone:
+              enabled: false
+            steps:
+              - id: run_load_tests
+                name: Run load tests
+                timeout: 15m
+                run:
+                  shell: sh
+                  container:
+                    connector: devrel_harness_docker
+                    image: sonichigo/ledger-ci-lab:1.0
+                  script: |-
+                    cd /app
+                    FIXTURE_ROWS=150000000 pytest -s tests/test_load.py
+
+          - id: export_tests
+            name: Export Tests
+            clone:
+              enabled: false
+            steps:
+              - id: run_export_tests
+                name: Run export tests
+                timeout: 10m
+                run:
+                  shell: sh
+                  container:
+                    connector: devrel_harness_docker
+                    image: sonichigo/ledger-ci-lab:1.0
+                  script: |-
+                    cd /app
+                    EXPORT_ROWS=20000000000 pytest -s tests/test_export.py
+
+          - id: integration_tests
+            name: Integration Tests
+            clone:
+              enabled: false
+            steps:
+              - id: run_integration_tests
+                name: Run integration tests
+                timeout: 60s
+                run:
+                  shell: sh
+                  container:
+                    connector: devrel_harness_docker
+                    image: sonichigo/ledger-ci-lab:1.0
+                  script: |-
+                    cd /app
+                    DB_HOST=db.internal DB_WAIT_SECONDS=300 pytest -s tests/test_integration.py
+
+          - id: dependencies
+            name: Install Dependencies
+            clone:
+              enabled: false
+            steps:
+              - id: install_dependencies
+                name: Install dependencies
+                timeout: 10m
+                run:
+                  shell: sh
+                  container:
+                    connector: devrel_harness_docker
+                    image: python:3.12-slim
+                  script: |-
+                    PIP_INDEX_URL=https://pypi.internal.example/simple pip install --retries 1 --timeout 5 pytest==8.3.5
