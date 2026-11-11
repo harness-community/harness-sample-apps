@@ -21,7 +21,7 @@
     "boom": "2.10.1",
     "cryptiles": "2.0.5",
     "mkdirp": "0.5.1",
-    "handlebars": "4.0.5",
+    "handlebars": "4.7.10",
     "jsonwebtoken": "5.7.0",
     "mongoose": "4.13.21"
   }
