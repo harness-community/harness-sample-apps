@@ -3,6 +3,8 @@ pipeline:
   identifier: AI_Test_Trust_Mutation_Quality_Gate
   clone:
     enabled: true
+    connector: github_devrel_harness_community
+    repo_name: harness-community/harness-sample-apps
   stages:
     - id: MutationQualityGate
       name: Mutation Quality Gate
