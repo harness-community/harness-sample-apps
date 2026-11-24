@@ -24,7 +24,7 @@ pipeline:
           name: Setup Hono + stage tests
           run:
             container:
-              image: node:20-bullseye
+              image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker
@@ -33,7 +33,7 @@ pipeline:
           name: Run Vitest (AI + human + original Buffer tests)
           run:
             container:
-              image: node:20-bullseye
+              image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
@@ -47,7 +47,7 @@ pipeline:
           name: Run Stryker mutation testing
           run:
             container:
-              image: node:20-bullseye
+              image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
@@ -56,7 +56,7 @@ pipeline:
           name: Enforce mutation quality gate
           run:
             container:
-              image: node:20-bullseye
+              image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker
