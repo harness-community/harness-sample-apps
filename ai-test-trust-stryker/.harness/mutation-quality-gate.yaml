@@ -51,7 +51,7 @@ pipeline:
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
-              ./node_modules/.bin/stryker run
+              node node_modules/@stryker-mutator/core/bin/stryker.js run
         - id: quality_gate
           name: Enforce mutation quality gate
           run:
