@@ -1,0 +1,6 @@
+.hono/
+.stryker-tmp/
+.stryker/
+node_modules/
+reports/
+*.log

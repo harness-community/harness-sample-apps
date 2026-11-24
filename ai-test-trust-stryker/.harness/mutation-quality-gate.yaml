@@ -1,0 +1,65 @@
+pipeline:
+  name: AI Test Trust - Mutation Quality Gate
+  identifier: AI_Test_Trust_Mutation_Quality_Gate
+  clone:
+    enabled: true
+  stages:
+    - id: MutationQualityGate
+      name: Mutation Quality Gate
+      runtime: cloud
+      clone:
+        enabled: true
+      cache:
+        enabled: true
+      steps:
+        - id: setup_hono
+          name: Setup Hono + stage tests
+          run:
+            container:
+              image: node:20-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker
+              bash scripts/setup-hono.sh
+
+        - id: run_vitest
+          name: Run Vitest (AI + human + original Buffer tests)
+          run:
+            container:
+              image: node:20-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker/.hono
+              mkdir -p ../reports
+              npx vitest run \
+                src/utils/buffer.ai.eval.test.ts \
+                src/utils/buffer.human.test.ts \
+                src/utils/buffer.test.ts \
+                --config vitest.buffer.config.ts \
+                --reporter=default \
+                --reporter=junit \
+                --outputFile.junit=../reports/junit-vitest.xml
+            report:
+              type: junit
+              paths:
+                - ai-test-trust-stryker/reports/junit-vitest.xml
+
+        - id: run_stryker
+          name: Run Stryker mutation testing
+          run:
+            container:
+              image: node:20-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker/.hono
+              npx stryker run
+
+        - id: quality_gate
+          name: Enforce mutation quality gate
+          run:
+            container:
+              image: node:20-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker
+              bash scripts/check-quality-gate.sh
