@@ -38,7 +38,7 @@ pipeline:
             script: |
               cd ai-test-trust-stryker/.hono
               mkdir -p ../reports
-              pnpm exec vitest run src/utils/buffer.ai.eval.test.ts src/utils/buffer.human.test.ts src/utils/buffer.test.ts --config vitest.buffer.config.ts --reporter=default --reporter=junit --outputFile.junit=../reports/junit-vitest.xml
+              ./node_modules/.bin/vitest run src/utils/buffer.ai.eval.test.ts src/utils/buffer.human.test.ts src/utils/buffer.test.ts --config vitest.buffer.config.ts --reporter=default --reporter=junit --outputFile.junit=../reports/junit-vitest.xml
             report:
               type: junit
               paths:
@@ -51,7 +51,7 @@ pipeline:
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
-              pnpm exec stryker run
+              ./node_modules/.bin/stryker run
         - id: quality_gate
           name: Enforce mutation quality gate
           run:
