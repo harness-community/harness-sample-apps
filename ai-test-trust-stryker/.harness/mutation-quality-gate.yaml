@@ -5,14 +5,18 @@ pipeline:
     codebase_branch:
       type: string
       default: feat/ai-test-trust-stryker-lab
-      description: Branch of harness-sample-apps to check out
+      description: Branch of harness-sample-apps to check out (used for manual runs)
+    codebase_sha:
+      type: string
+      default: ""
+      description: Commit SHA to check out. Populated by PR trigger; empty on manual runs.
   clone:
     enabled: true
     connector: github_devrel_harness_community
     repo_name: harness-community/harness-sample-apps
     ref:
-      type: branch
-      name: <+inputs.codebase_branch>
+      type: <+ inputs.codebase_sha == "" ? "branch" : "sha" >
+      name: <+ inputs.codebase_sha == "" ? inputs.codebase_branch : inputs.codebase_sha >
   stages:
     - id: MutationQualityGate
       name: Mutation Quality Gate
