@@ -10,6 +10,14 @@ pipeline:
       type: string
       default: ""
       description: Commit SHA to check out. Populated by PR trigger; empty on manual runs.
+    test_suite:
+      type: string
+      default: improved
+      description: "`baseline` = Hono's original Buffer tests only. `improved` = original + AI evals + human-reviewed."
+    enable_agent:
+      type: string
+      default: "false"
+      description: "`true` to run the advisory mutation_reviewer agent on live survivors. Never gates."
   clone:
     enabled: true
     connector: github_devrel_harness_community
@@ -34,7 +42,7 @@ pipeline:
               cd ai-test-trust-stryker
               bash scripts/setup-hono.sh
         - id: run_vitest
-          name: Run Vitest (AI + human + original Buffer tests)
+          name: Run Vitest (suite = <+ inputs.test_suite >)
           run:
             container:
               image: node:22-bullseye
@@ -42,19 +50,33 @@ pipeline:
             script: |
               cd ai-test-trust-stryker/.hono
               mkdir -p ../reports
-              ./node_modules/.bin/vitest run src/utils/buffer.ai.eval.test.ts src/utils/buffer.human.test.ts src/utils/buffer.test.ts --config vitest.buffer.config.ts --reporter=default --reporter=junit --outputFile.junit=../reports/junit-vitest.xml
+              SUITE="<+ inputs.test_suite >"
+              if [ "$SUITE" = "baseline" ]; then
+                echo "Running baseline suite: Hono's original src/utils/buffer.test.ts only"
+                TEST_FILES="src/utils/buffer.test.ts"
+              else
+                echo "Running improved suite: original + AI evals + human-reviewed"
+                TEST_FILES="src/utils/buffer.ai.eval.test.ts src/utils/buffer.human.test.ts src/utils/buffer.test.ts"
+              fi
+              ./node_modules/.bin/vitest run $TEST_FILES --config vitest.buffer.config.ts --reporter=default --reporter=junit --outputFile.junit=../reports/junit-vitest.xml
             report:
               type: junit
               paths:
                 - ai-test-trust-stryker/reports/junit-vitest.xml
         - id: run_stryker
-          name: Run Stryker mutation testing
+          name: Run Stryker mutation testing (suite = <+ inputs.test_suite >)
           run:
             container:
               image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
+              # For baseline, restrict Stryker's test runner to original tests only
+              SUITE="<+ inputs.test_suite >"
+              if [ "$SUITE" = "baseline" ]; then
+                echo "Patching vitest.buffer.config.ts to include only original tests"
+                node -e "const fs=require('fs');let s=fs.readFileSync('vitest.buffer.config.ts','utf8');s=s.replace(/include:\s*\[[^\]]*\]/,\"include: ['src/utils/buffer.test.ts']\");fs.writeFileSync('vitest.buffer.config.ts',s);console.log(s);"
+              fi
               node node_modules/@stryker-mutator/core/bin/stryker.js run
         - id: quality_gate
           name: Enforce mutation quality gate
@@ -65,3 +87,178 @@ pipeline:
             script: |
               cd ai-test-trust-stryker
               bash scripts/check-quality-gate.sh
+        - id: prepare_agent_payload
+          name: Prepare agent payload from LIVE survivors
+          if: <+ inputs.enable_agent == "true" >
+          run:
+            container:
+              image: node:22-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker
+              REPORT=".hono/reports/mutation/mutation.json"
+              if [ ! -f "$REPORT" ]; then
+                echo "ERROR: $REPORT not found"
+                exit 1
+              fi
+              MUTANTS_JSON=$(node -e "
+                const r = require('./' + process.argv[1]);
+                const out = [];
+                let n = 0;
+                for (const [file, info] of Object.entries(r.files || {})) {
+                  const src = info.source || '';
+                  const lines = src.split(/\n/);
+                  for (const m of (info.mutants || [])) {
+                    if (m.status !== 'Survived') continue;
+                    n++;
+                    const sL = m.location && m.location.start ? m.location.start.line : 0;
+                    const sC = m.location && m.location.start ? m.location.start.column : 0;
+                    const eL = m.location && m.location.end   ? m.location.end.line   : 0;
+                    const eC = m.location && m.location.end   ? m.location.end.column : 0;
+                    const snippet = sL>0 && sL<=lines.length ? lines[sL-1] : '';
+                    out.push({ n, id: String(m.id), location: 'L'+sL+':'+sC, locEnd: 'L'+eL+':'+eC, mutator: m.mutatorName, replacement: m.replacement, coveredBy: (m.coveredBy||[]).length, originalSnippet: snippet });
+                  }
+                }
+                process.stdout.write(JSON.stringify(out));
+              " "$REPORT")
+              SIZE=${#MUTANTS_JSON}
+              echo "Live survivor payload: $SIZE bytes"
+              if [ "$SIZE" -gt 7000 ]; then
+                echo "WARN: payload > 7000 bytes, may exceed output variable limit"
+              fi
+              echo "--- mutants_json (live) ---"
+              echo "$MUTANTS_JSON"
+              echo "--- end ---"
+              # Export for downstream step
+              echo "mutants_json=$MUTANTS_JSON" >> "$DRONE_OUTPUT"
+            output:
+              - mutants_json
+        - id: agent_review
+          name: Mutation Reviewer (advisory, LIVE survivors)
+          if: <+ inputs.enable_agent == "true" >
+          timeout: 10m
+          on-failure:
+            errors:
+              - All
+            action:
+              type: ignore
+          template:
+            uses: mutation_reviewer@1.0.2
+            with:
+              mutants_json: <+ steps.prepare_agent_payload.output.outputVariables.mutants_json >
+              buffer_source: |-
+                /**
+                 * @module
+                 * Buffer utility.
+                 */
+
+                import { sha256 } from './crypto'
+
+                export const equal = (a: ArrayBuffer, b: ArrayBuffer): boolean => {
+                  if (a === b) {
+                    return true
+                  }
+                  if (a.byteLength !== b.byteLength) {
+                    return false
+                  }
+
+                  const va = new DataView(a)
+                  const vb = new DataView(b)
+
+                  let i = va.byteLength
+                  while (i--) {
+                    if (va.getUint8(i) !== vb.getUint8(i)) {
+                      return false
+                    }
+                  }
+
+                  return true
+                }
+
+                const constantTimeEqualString = (a: string, b: string): boolean => {
+                  const aLen = a.length
+                  const bLen = b.length
+                  const maxLen = Math.max(aLen, bLen)
+                  let out = aLen ^ bLen
+                  for (let i = 0; i < maxLen; i++) {
+                    const aChar = i < aLen ? a.charCodeAt(i) : 0
+                    const bChar = i < bLen ? b.charCodeAt(i) : 0
+                    out |= aChar ^ bChar
+                  }
+                  return out === 0
+                }
+
+                type StringHashFunction = (input: string) => string | null | Promise<string | null>
+
+                const timingSafeEqualString = async (
+                  a: string,
+                  b: string,
+                  hashFunction?: StringHashFunction
+                ): Promise<boolean> => {
+                  if (!hashFunction) {
+                    hashFunction = sha256
+                  }
+
+                  const [sa, sb] = await Promise.all([hashFunction(a), hashFunction(b)])
+
+                  if (sa == null || sb == null || typeof sa !== 'string' || typeof sb !== 'string') {
+                    return false
+                  }
+
+                  const hashEqual = constantTimeEqualString(sa, sb)
+                  const originalEqual = constantTimeEqualString(a, b)
+
+                  return hashEqual && originalEqual
+                }
+
+                export const timingSafeEqual = async (
+                  a: any,
+                  b: any,
+                  hashFunction?: Function
+                ): Promise<boolean> => {
+                  if (typeof a === 'string' && typeof b === 'string') {
+                    return timingSafeEqualString(a, b, hashFunction as StringHashFunction)
+                  }
+
+                  if (!hashFunction) {
+                    hashFunction = sha256
+                  }
+
+                  const [sa, sb] = await Promise.all([hashFunction(a), hashFunction(b)])
+
+                  if (!sa || !sb || typeof sa !== 'string' || typeof sb !== 'string') {
+                    return false
+                  }
+
+                  return timingSafeEqualString(sa, sb)
+                }
+
+                export const bufferToString = (buffer: ArrayBuffer): string => {
+                  if (buffer instanceof ArrayBuffer) {
+                    const enc = new TextDecoder('utf-8')
+                    return enc.decode(buffer)
+                  }
+                  return buffer
+                }
+
+                export const bufferToFormData = (
+                  arrayBuffer: ArrayBuffer,
+                  contentType: string
+                ): Promise<FormData> => {
+                  const response = new Response(arrayBuffer, {
+                    headers: {
+                      'Content-Type': contentType.replace(/^[^;]+/, (mediaType) => mediaType.toLowerCase()),
+                    },
+                  })
+                  return response.formData()
+                }
+              contract: |-
+                Behavioural contract for src/utils/buffer.ts
+
+                Clause 1 (RFC 9110 section 8.3.2): Media-type names are case-insensitive; canonical form on Hono Response headers is lowercase. Content-Type normalisation must lowercase the media type.
+
+                Clause 2 (RFC 2046 section 5.1.1): The multipart boundary parameter value is case-sensitive. Normalisation must not alter parameter values, only the media-type token preceding the first ';'.
+
+                Clause 3 (Timing-safe equality): Constant-time string comparator compares by length-XOR accumulator seeded with aLen XOR bLen, then byte XOR in a fixed-time loop of length max(aLen, bLen). charCodeAt past the end returns NaN, which coerces to 0. Any length mismatch leaves out != 0 and the function returns false regardless of byte content.
+
+                Clause 4 (Hash-function hook invariant): When a caller passes a hashFunction to timingSafeEqual, that hashFunction MUST be invoked on both operands before the constant-time compare. Dropping the caller-supplied hash and falling back to the built-in sha256 is a contract violation observable only via a call-count spy.
