@@ -5,26 +5,22 @@ pipeline:
     codebase_branch:
       type: string
       default: feat/ai-test-trust-stryker-lab
-      description: Branch of harness-sample-apps to check out (used for manual runs)
-    codebase_sha:
-      type: string
-      default: ""
-      description: Commit SHA to check out. Populated by PR trigger; empty on manual runs.
+      description: Branch of harness-sample-apps
     test_suite:
       type: string
       default: improved
-      description: "`baseline` = Hono's original Buffer tests only. `improved` = original + AI evals + human-reviewed."
+      description: baseline or improved
     enable_agent:
       type: string
       default: "false"
-      description: "`true` to run the advisory mutation_reviewer agent on live survivors. Never gates."
+      description: advisory agent toggle
   clone:
     enabled: true
     connector: github_devrel_harness_community
     repo_name: harness-community/harness-sample-apps
     ref:
-      type: <+ inputs.codebase_sha == "" ? "branch" : "sha" >
-      name: <+ inputs.codebase_sha == "" ? inputs.codebase_branch : inputs.codebase_sha >
+      type: branch
+      name: <+inputs.codebase_branch>
   stages:
     - id: MutationQualityGate
       name: Mutation Quality Gate
@@ -42,7 +38,7 @@ pipeline:
               cd ai-test-trust-stryker
               bash scripts/setup-hono.sh
         - id: run_vitest
-          name: Run Vitest (suite = <+ inputs.test_suite >)
+          name: Run Vitest
           run:
             container:
               image: node:22-bullseye
@@ -50,12 +46,10 @@ pipeline:
             script: |
               cd ai-test-trust-stryker/.hono
               mkdir -p ../reports
-              SUITE="<+ inputs.test_suite >"
+              SUITE="<+inputs.test_suite>"
               if [ "$SUITE" = "baseline" ]; then
-                echo "Running baseline suite: Hono's original src/utils/buffer.test.ts only"
                 TEST_FILES="src/utils/buffer.test.ts"
               else
-                echo "Running improved suite: original + AI evals + human-reviewed"
                 TEST_FILES="src/utils/buffer.ai.eval.test.ts src/utils/buffer.human.test.ts src/utils/buffer.test.ts"
               fi
               ./node_modules/.bin/vitest run $TEST_FILES --config vitest.buffer.config.ts --reporter=default --reporter=junit --outputFile.junit=../reports/junit-vitest.xml
@@ -64,20 +58,66 @@ pipeline:
               paths:
                 - ai-test-trust-stryker/reports/junit-vitest.xml
         - id: run_stryker
-          name: Run Stryker mutation testing (suite = <+ inputs.test_suite >)
+          name: Run Stryker mutation testing
           run:
             container:
               image: node:22-bullseye
             shell: bash
             script: |
               cd ai-test-trust-stryker/.hono
-              # For baseline, restrict Stryker's test runner to original tests only
-              SUITE="<+ inputs.test_suite >"
+              SUITE="<+inputs.test_suite>"
               if [ "$SUITE" = "baseline" ]; then
-                echo "Patching vitest.buffer.config.ts to include only original tests"
-                node -e "const fs=require('fs');let s=fs.readFileSync('vitest.buffer.config.ts','utf8');s=s.replace(/include:\s*\[[^\]]*\]/,\"include: ['src/utils/buffer.test.ts']\");fs.writeFileSync('vitest.buffer.config.ts',s);console.log(s);"
+                node -e "const fs=require('fs');let s=fs.readFileSync('vitest.buffer.config.ts','utf8');s=s.replace(/include:\s*\[[^\]]*\]/,\"include: ['src/utils/buffer.test.ts']\");fs.writeFileSync('vitest.buffer.config.ts',s);"
               fi
               node node_modules/@stryker-mutator/core/bin/stryker.js run
+        - id: prepare_agent_payload
+          name: Prepare agent payload from LIVE survivors
+          run:
+            container:
+              image: node:22-bullseye
+            shell: bash
+            script: |
+              cd ai-test-trust-stryker
+              REPORT=".hono/reports/mutation/mutation.json"
+              if [ -f "$REPORT" ]; then
+                MUTANTS_JSON=$(node -e "
+                  const r = require('./' + process.argv[1]);
+                  const out = [];
+                  let n = 0;
+                  for (const [file, info] of Object.entries(r.files || {})) {
+                    const src = info.source || '';
+                    const lines = src.split(/\n/);
+                    for (const m of (info.mutants || [])) {
+                      if (m.status !== 'Survived') continue;
+                      n++;
+                      const sL = m.location && m.location.start ? m.location.start.line : 0;
+                      const sC = m.location && m.location.start ? m.location.start.column : 0;
+                      const eL = m.location && m.location.end   ? m.location.end.line   : 0;
+                      const eC = m.location && m.location.end   ? m.location.end.column : 0;
+                      const snippet = sL>0 && sL<=lines.length ? lines[sL-1] : '';
+                      out.push({ n, id: String(m.id), location: 'L'+sL+':'+sC, locEnd: 'L'+eL+':'+eC, mutator: m.mutatorName, replacement: m.replacement, coveredBy: (m.coveredBy||[]).length, originalSnippet: snippet });
+                    }
+                  }
+                  process.stdout.write(JSON.stringify(out));
+                " "$REPORT")
+                SIZE=${#MUTANTS_JSON}
+                echo "Live survivor payload: $SIZE bytes"
+                echo "--- mutants_json (live) ---"
+                echo "$MUTANTS_JSON"
+                echo "--- end ---"
+                mkdir -p reports
+                echo "$MUTANTS_JSON" > reports/survivors.json
+                # Export as step output (CI v1 output-vars file). Try both known env vars.
+                OUT_FILE="${DRONE_OUTPUT:-${HARNESS_OUTPUT_PATH:-${PLUGIN_OUTPUT_VARS:-/tmp/harness-output.env}}}"
+                printf 'mutants_json=%s\n' "$MUTANTS_JSON" >> "$OUT_FILE"
+                echo "Wrote mutants_json to $OUT_FILE ($SIZE bytes)"
+              else
+                echo "NOTE: $REPORT not found (likely because Stryker gate failed earlier)"
+                OUT_FILE="${DRONE_OUTPUT:-${HARNESS_OUTPUT_PATH:-${PLUGIN_OUTPUT_VARS:-/tmp/harness-output.env}}}"
+                printf 'mutants_json=%s\n' "[]" >> "$OUT_FILE"
+              fi
+            output:
+              - name: mutants_json
         - id: quality_gate
           name: Enforce mutation quality gate
           run:
@@ -87,65 +127,21 @@ pipeline:
             script: |
               cd ai-test-trust-stryker
               bash scripts/check-quality-gate.sh
-        - id: prepare_agent_payload
-          name: Prepare agent payload from LIVE survivors
-          if: <+ inputs.enable_agent == "true" >
-          run:
-            container:
-              image: node:22-bullseye
-            shell: bash
-            script: |
-              cd ai-test-trust-stryker
-              REPORT=".hono/reports/mutation/mutation.json"
-              if [ ! -f "$REPORT" ]; then
-                echo "ERROR: $REPORT not found"
-                exit 1
-              fi
-              MUTANTS_JSON=$(node -e "
-                const r = require('./' + process.argv[1]);
-                const out = [];
-                let n = 0;
-                for (const [file, info] of Object.entries(r.files || {})) {
-                  const src = info.source || '';
-                  const lines = src.split(/\n/);
-                  for (const m of (info.mutants || [])) {
-                    if (m.status !== 'Survived') continue;
-                    n++;
-                    const sL = m.location && m.location.start ? m.location.start.line : 0;
-                    const sC = m.location && m.location.start ? m.location.start.column : 0;
-                    const eL = m.location && m.location.end   ? m.location.end.line   : 0;
-                    const eC = m.location && m.location.end   ? m.location.end.column : 0;
-                    const snippet = sL>0 && sL<=lines.length ? lines[sL-1] : '';
-                    out.push({ n, id: String(m.id), location: 'L'+sL+':'+sC, locEnd: 'L'+eL+':'+eC, mutator: m.mutatorName, replacement: m.replacement, coveredBy: (m.coveredBy||[]).length, originalSnippet: snippet });
-                  }
-                }
-                process.stdout.write(JSON.stringify(out));
-              " "$REPORT")
-              SIZE=${#MUTANTS_JSON}
-              echo "Live survivor payload: $SIZE bytes"
-              if [ "$SIZE" -gt 7000 ]; then
-                echo "WARN: payload > 7000 bytes, may exceed output variable limit"
-              fi
-              echo "--- mutants_json (live) ---"
-              echo "$MUTANTS_JSON"
-              echo "--- end ---"
-              # Export for downstream step
-              echo "mutants_json=$MUTANTS_JSON" >> "$DRONE_OUTPUT"
-            output:
-              - mutants_json
-        - id: agent_review
-          name: Mutation Reviewer (advisory, LIVE survivors)
-          if: <+ inputs.enable_agent == "true" >
+    - id: AgentReview
+      name: AI Mutation Review (advisory)
+      if: <+inputs.enable_agent> == "true"
+      runtime: cloud
+      on-failure:
+        errors: all
+        action: ignore
+      steps:
+        - id: mutation_reviewer_step
+          name: Mutation Reviewer
           timeout: 10m
-          on-failure:
-            errors:
-              - All
-            action:
-              type: ignore
           template:
             uses: mutation_reviewer@1.0.2
             with:
-              mutants_json: <+ steps.prepare_agent_payload.output.outputVariables.mutants_json >
+              mutants_json: <+pipeline.stages.MutationQualityGate.steps.prepare_agent_payload.output.outputVariables.mutants_json>
               buffer_source: |-
                 /**
                  * @module
