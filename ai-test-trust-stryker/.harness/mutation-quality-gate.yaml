@@ -102,19 +102,18 @@ pipeline:
                 " "$REPORT")
                 SIZE=${#MUTANTS_JSON}
                 echo "Live survivor payload: $SIZE bytes"
-                echo "--- mutants_json (live) ---"
-                echo "$MUTANTS_JSON"
+                echo "--- mutants_json head (first 300 chars) ---"
+                echo "${MUTANTS_JSON:0:300}"
                 echo "--- end ---"
                 mkdir -p reports
-                echo "$MUTANTS_JSON" > reports/survivors.json
-                # Export as step output (CI v1 output-vars file). Try both known env vars.
-                OUT_FILE="${DRONE_OUTPUT:-${HARNESS_OUTPUT_PATH:-${PLUGIN_OUTPUT_VARS:-/tmp/harness-output.env}}}"
-                printf 'mutants_json=%s\n' "$MUTANTS_JSON" >> "$OUT_FILE"
-                echo "Wrote mutants_json to $OUT_FILE ($SIZE bytes)"
+                printf '%s' "$MUTANTS_JSON" > reports/survivors.json
+                mutants_json="$MUTANTS_JSON"
+                export mutants_json
+                echo "Captured mutants_json ($SIZE bytes) as shell env for v1 run-step output capture"
               else
-                echo "NOTE: $REPORT not found (likely because Stryker gate failed earlier)"
-                OUT_FILE="${DRONE_OUTPUT:-${HARNESS_OUTPUT_PATH:-${PLUGIN_OUTPUT_VARS:-/tmp/harness-output.env}}}"
-                printf 'mutants_json=%s\n' "[]" >> "$OUT_FILE"
+                echo "NOTE: $REPORT not found"
+                mutants_json="[]"
+                export mutants_json
               fi
             output:
               - name: mutants_json
@@ -139,7 +138,7 @@ pipeline:
           name: Mutation Reviewer
           timeout: 10m
           template:
-            uses: mutation_reviewer@1.0.2
+            uses: mutation_reviewer@1.0.3
             with:
               mutants_json: <+pipeline.stages.MutationQualityGate.steps.prepare_agent_payload.output.outputVariables.mutants_json>
               buffer_source: |-
